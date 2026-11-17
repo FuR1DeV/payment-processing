@@ -35,16 +35,16 @@ def upgrade() -> None:
         sa.Column("created_at", TS, nullable=False),
         sa.Column("processed_at", TS, nullable=True),
         sa.Column("webhook_delivered_at", TS, nullable=True),
-        sa.PrimaryKeyConstraint("id", name="pk_payments"),
-        sa.UniqueConstraint("idempotency_key", name="uq_payments_idempotency_key"),
-        sa.CheckConstraint("amount > 0", name="ck_payments_amount_positive"),
-        sa.CheckConstraint("currency IN ('RUB', 'USD', 'EUR')", name="ck_payments_currency"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_payments")),
+        sa.UniqueConstraint("idempotency_key", name=op.f("uq_payments_idempotency_key")),
+        sa.CheckConstraint("amount > 0", name=op.f("ck_payments_amount_positive")),
+        sa.CheckConstraint("currency IN ('RUB', 'USD', 'EUR')", name=op.f("ck_payments_currency")),
         sa.CheckConstraint(
-            "status IN ('pending', 'succeeded', 'failed')", name="ck_payments_status"
+            "status IN ('pending', 'succeeded', 'failed')", name=op.f("ck_payments_status")
         ),
         sa.CheckConstraint(
             "(status = 'pending') = (processed_at IS NULL)",
-            name="ck_payments_processed_at_matches_status",
+            name=op.f("ck_payments_processed_at_matches_status"),
         ),
     )
 
@@ -60,24 +60,24 @@ def upgrade() -> None:
         sa.Column("attempts", sa.Integer(), server_default="0", nullable=False),
         sa.Column("next_attempt_at", TS, nullable=False),
         sa.Column("last_error", sa.String(500), nullable=True),
-        sa.PrimaryKeyConstraint("id", name="pk_outbox"),
-        sa.UniqueConstraint("event_id", name="uq_outbox_event_id"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_outbox")),
+        sa.UniqueConstraint("event_id", name=op.f("uq_outbox_event_id")),
     )
     op.create_index(
-        "ix_payments_pending_created_at",
+        op.f("ix_payments_pending_created_at"),
         "payments",
         ["created_at"],
         postgresql_where=sa.text("status = 'pending'"),
     )
     op.create_index(
-        "ix_outbox_unpublished",
+        op.f("ix_outbox_unpublished"),
         "outbox",
         ["id"],
         postgresql_where=sa.text("published_at IS NULL"),
     )
-    op.create_index("ix_outbox_aggregate_id", "outbox", ["aggregate_id"])
+    op.create_index(op.f("ix_outbox_aggregate_id"), "outbox", ["aggregate_id"])
     op.create_index(
-        "uq_outbox_one_waiting_per_aggregate",
+        op.f("uq_outbox_one_waiting_per_aggregate"),
         "outbox",
         ["aggregate_id"],
         unique=True,
@@ -86,9 +86,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("uq_outbox_one_waiting_per_aggregate", table_name="outbox")
-    op.drop_index("ix_outbox_aggregate_id", table_name="outbox")
-    op.drop_index("ix_outbox_unpublished", table_name="outbox")
+    op.drop_index(op.f("uq_outbox_one_waiting_per_aggregate"), table_name="outbox")
+    op.drop_index(op.f("ix_outbox_aggregate_id"), table_name="outbox")
+    op.drop_index(op.f("ix_outbox_unpublished"), table_name="outbox")
     op.drop_table("outbox")
-    op.drop_index("ix_payments_pending_created_at", table_name="payments")
+    op.drop_index(op.f("ix_payments_pending_created_at"), table_name="payments")
     op.drop_table("payments")
