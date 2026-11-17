@@ -1,0 +1,122 @@
+name: payment-processing
+
+x-env: &env
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://payments:payments@postgres:5432/payments
+  RABBITMQ_URL: amqp://payments:payments@rabbitmq:5672/
+  # Dev-only values for a local run; anything real comes from a secret store.
+  API_KEY: ${API_KEY:-local-dev-api-key}
+  WEBHOOK_SECRET: ${WEBHOOK_SECRET:-local-dev-webhook-secret}
+
+x-app: &app
+  build: .
+  image: payment-processing:local
+  env_file:
+    - path: .env
+      required: false
+  environment: *env
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments
+      POSTGRES_DB: payments
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5442}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payments -d payments"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:4.4-management-alpine
+    # The node name, and so its data directory, follows the hostname: a fixed one plus a
+    # volume keep queues and messages when the container is recreated.
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: payments
+      RABBITMQ_DEFAULT_PASS: payments
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "${RABBITMQ_UI_PORT:-15682}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-8090}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Publishes outbox rows to RabbitMQ. Several copies may run: rows are claimed with SKIP LOCKED.
+  relay:
+    <<: *app
+    command: ["python", "-m", "app.messaging.relay"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  consumer:
+    <<: *app
+    command: ["faststream", "run", "app.messaging.consumer:create_app", "--factory"]
+    # Docker's default 10 s would cut the broker's 30 s graceful shutdown short.
+    stop_grace_period: 35s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  # Plays the client's server for the demo; PUT /mode {"fail": true} makes it answer 500.
+  webhook-receiver:
+    <<: *app
+    command: ["uvicorn", "webhook_receiver.app:app", "--host", "0.0.0.0", "--port", "9000"]
+    ports:
+      - "${WEBHOOK_RECEIVER_PORT:-8091}:9000"
+
+  # docker compose --profile test run --rm tests
+  tests:
+    <<: *app
+    profiles: ["test"]
+    command: ["pytest", "-q"]
+    restart: "no"
+    environment:
+      <<: *env
+      DATABASE_URL: postgresql+asyncpg://payments:payments@postgres:5432/payments_test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
