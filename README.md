@@ -11,6 +11,30 @@
 
 Стек: Python 3.13, FastAPI, Pydantic v2, SQLAlchemy 2 (async, asyncpg), PostgreSQL 17, Alembic, RabbitMQ 4.4, FastStream 0.7, httpx, Poetry, Ruff, pytest, Docker Compose.
 
+## Задание и что сверх него
+
+Все 8 пунктов задания и где они в коде:
+
+| Пункт | Где |
+|---|---|
+| Модели и миграции: `payments`, `outbox` | `app/db/models.py`, `migrations/versions/` |
+| `POST /api/v1/payments`, `GET /api/v1/payments/{id}`, `X-API-Key` | `app/api/` |
+| Один consumer: шлюз, статус, вебхук | `app/messaging/consumer.py`, `app/services/processing.py` |
+| Outbox: запись в одной транзакции с платежом, relay | `app/services/payments.py`, `app/messaging/relay.py` |
+| Retry: 3 попытки, паузы 2 и 4 с | `app/messaging/retry.py`, `app/messaging/topology.py` |
+| Dead Letter Queue | `payments.new.dlq`, `app/messaging/topology.py` |
+| Docker: postgres, rabbitmq, api, consumer | `docker-compose.yml` (плюс relay, migrate и приёмник вебхуков) |
+| README с запуском и примерами | этот файл |
+
+Сверх задания. Ядро от этого не зависит, каждую часть можно убрать отдельно:
+
+- HMAC-подпись вебхуков и приёмник вебхуков, который играет сервер клиента;
+- circuit breaker для вебхуков: если сервер клиента лежит, запросы к нему приостанавливаются;
+- страховка для платежей, застрявших в `pending` (например, после короткого сбоя БД);
+- команда возврата сообщений из DLQ;
+- демо-страница и скрипт `scripts/demo.py` со сценариями;
+- CI на GitHub Actions: тесты и подъём всего стека.
+
 ## Быстрый старт
 
 ```bash
