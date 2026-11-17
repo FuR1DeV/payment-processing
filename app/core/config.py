@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # Swagger UI and the OpenAPI schema: on for local runs, off anywhere real.
     docs_enabled: bool = True
+    # Demo page at /demo/ with its helper endpoints /demo/api/*: on for local runs, off
+    # anywhere real. The helpers read the outbox, the queues and the demo webhook receiver.
+    demo_page_enabled: bool = True
+    demo_receiver_url: str = "http://webhook-receiver:9000"
 
     # Static key for the X-API-Key header. Without it the service does not start.
     api_key: SecretStr

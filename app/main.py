@@ -1,22 +1,28 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import sqlalchemy as sa
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.payments import router as payments_router
 from app.bootstrap import ApiContainer, build_api
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.demo.router import router as demo_router
+
+DEMO_DIR = Path(__file__).parent / "demo" / "static"
 
 
 def create_app(container: ApiContainer | None = None) -> FastAPI:
     """Run: uvicorn app.main:create_app --factory. With a ready container (tests) the
     lifespan does not build or close anything.
 
-    The API does not talk to RabbitMQ at all: it writes the payment and the outbox event to
-    PostgreSQL, the relay publishes. Payments are accepted even while the broker is down.
+    The payment endpoints do not talk to RabbitMQ at all: they write the payment and the
+    outbox event to PostgreSQL, the relay publishes. Payments are accepted even while the
+    broker is down. Only the demo helpers (/demo/api, off in production) look at the queues.
     """
 
     @asynccontextmanager
@@ -48,6 +54,10 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
     if container is not None:
         app.state.container = container
     app.include_router(payments_router)
+    if settings.demo_page_enabled:
+        # The router first: the static mount at /demo would otherwise catch /demo/api too.
+        app.include_router(demo_router)
+        app.mount("/demo", StaticFiles(directory=DEMO_DIR, html=True), name="demo")
 
     @app.get("/health", tags=["service"])
     async def health(request: Request) -> JSONResponse:

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Процессинг платежей: демо</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>Асинхронный процессинг платежей</h1>
+      <p class="lead">
+        API принимает платёж и сразу отвечает 202. Дальше всё происходит в фоне: событие из
+        outbox публикует relay, consumer спрашивает эмулятор шлюза (2-5 с, 90% одобрений) и
+        шлёт вебхук на приёмник, который играет сервер клиента. В карточке платежа видно
+        каждый шаг этого пути со временем от создания платежа.
+      </p>
+      <p class="meta">
+        Платежи страница создаёт через тот же публичный API, что и curl
+        (<a href="/docs">Swagger</a>). Outbox, очереди и приёмник вебхуков она читает через
+        служебные эндпоинты <code>/demo/api</code>, которые выключаются вместе со страницей
+        (<code>DEMO_PAGE_ENABLED=false</code>).
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <aside class="side">
+      <section class="panel">
+        <h2>Ключ API</h2>
+        <p class="hint">
+          Заголовок <code>X-API-Key</code> для всех запросов страницы. В локальном стеке это
+          значение <code>API_KEY</code> из docker-compose.yml. Хранится в этом браузере.
+        </p>
+        <input id="api-key" class="text-input" type="text" autocomplete="off" spellcheck="false">
+        <p class="hint" id="key-status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Сценарии</h2>
+        <div id="scenarios" class="scenarios"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Сервер клиента</h2>
+          <span id="receiver-mode" class="badge">…</span>
+        </div>
+        <p class="hint">
+          Приёмник вебхуков <code>webhook-receiver</code>. Его можно «уронить»: тогда он
+          отвечает 500 на каждый вебхук.
+        </p>
+        <button type="button" id="receiver-toggle" class="action">…</button>
+        <ol id="receiver-log" class="mini-log"></ol>
+      </section>
+
+      <section class="panel">
+        <h2>Очереди RabbitMQ</h2>
+        <p class="hint">Сообщения, которые ждут в очереди сейчас. Обновляется каждые 2 с.</p>
+        <div id="queues" class="queues"></div>
+        <button type="button" id="replay" class="action" disabled>Вернуть сообщения из DLQ</button>
+        <p class="hint" id="replay-status"></p>
+      </section>
+    </aside>
+
+    <section class="feed" aria-live="polite">
+      <div id="banner" class="banner" hidden></div>
+      <div class="feed-head">
+        <h2>Платежи</h2>
+        <button type="button" id="clear" class="link-button">Очистить</button>
+      </div>
+      <p id="empty" class="empty">
+        Выберите сценарий слева. Другой сценарий очищает ленту, повторное нажатие того же
+        добавляет ещё одну карточку сверху.
+      </p>
+      <div id="runs" class="runs"></div>
+      <p class="footnote">
+        Падение RabbitMQ и процесса consumer здесь не показать: для них нужно остановить
+        контейнер. Как это сделать, описано в README.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

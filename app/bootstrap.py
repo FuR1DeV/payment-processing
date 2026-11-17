@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.core.config import Settings
 from app.core.db import create_engine, create_session_factory
 from app.db.repositories import UnitOfWork
+from app.demo.tools import DemoTools
 from app.integrations.circuit_breaker import BreakerWebhookSender, CircuitBreaker
 from app.integrations.gateway import EmulatedGateway
 from app.integrations.webhooks import HttpWebhookSender, create_http_client
@@ -37,18 +38,28 @@ class ApiContainer:
     db: Database
     create_payment: CreatePayment
     queries: PaymentQueries
+    demo: DemoTools | None = None  # only with DEMO_PAGE_ENABLED
 
     async def close(self) -> None:
+        if self.demo is not None:
+            await self.demo.close()
         await self.db.close()
 
 
-def build_api(settings: Settings) -> ApiContainer:
+def build_api(
+    settings: Settings, *, receiver_transport: httpx.AsyncBaseTransport | None = None
+) -> ApiContainer:
+    """Tests pass a transport that reaches the demo webhook receiver in process."""
     db = build_database(settings)
+    demo = None
+    if settings.demo_page_enabled:
+        demo = DemoTools(settings, db.uow_factory, receiver_transport=receiver_transport)
     return ApiContainer(
         settings=settings,
         db=db,
         create_payment=CreatePayment(uow_factory=db.uow_factory),
         queries=PaymentQueries(uow_factory=db.uow_factory),
+        demo=demo,
     )
 
 

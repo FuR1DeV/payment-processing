@@ -138,6 +138,14 @@ class OutboxRepository:
         )
         return (await self._s.execute(stmt)).scalar_one_or_none() is not None
 
+    async def list_for(self, aggregate_id: UUID) -> Sequence[OutboxEvent]:
+        stmt = (
+            sa.select(OutboxEvent)
+            .where(OutboxEvent.aggregate_id == aggregate_id)
+            .order_by(OutboxEvent.id)
+        )
+        return (await self._s.execute(stmt)).scalars().all()
+
     async def claim_batch(self, now: datetime, limit: int) -> Sequence[OutboxEvent]:
         """Lock a batch of unpublished events for this transaction.
 
