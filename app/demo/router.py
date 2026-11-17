@@ -2,10 +2,11 @@
 together with the page (DEMO_PAGE_ENABLED=false)."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.api.dependencies import ContainerDep, require_api_key
@@ -39,6 +40,38 @@ class OutboxEventOut(BaseModel):
     last_error: str | None
 
 
+class PaymentRowOut(BaseModel):
+    id: UUID
+    amount: Decimal
+    currency: str
+    status: str
+    failure_reason: str | None
+    idempotency_key: str
+    created_at: datetime
+    processed_at: datetime | None
+    webhook_delivered_at: datetime | None
+
+
+class OutboxRowOut(BaseModel):
+    id: int
+    event_id: UUID
+    event_type: str
+    aggregate_id: UUID
+    created_at: datetime
+    published_at: datetime | None
+    attempts: int
+    next_attempt_at: datetime
+    last_error: str | None
+
+
+class DbOut(BaseModel):
+    payments: list[PaymentRowOut]
+    payments_by_status: dict[str, int]
+    outbox: list[OutboxRowOut]
+    outbox_total: int
+    outbox_unpublished: int
+
+
 class QueueOut(BaseModel):
     name: str
     role: str
@@ -62,6 +95,19 @@ async def payment_outbox(payment_id: UUID, tools: ToolsDep) -> list[OutboxEventO
     """Outbox events of the payment: when written, when published by the relay."""
     events = await tools.outbox_events(payment_id)
     return [OutboxEventOut.model_validate(e, from_attributes=True) for e in events]
+
+
+@router.get("/db", response_model=DbOut)
+async def tables(tools: ToolsDep, limit: Annotated[int, Query(ge=1, le=50)] = 10) -> DbOut:
+    """The latest rows of payments and outbox as they are in PostgreSQL, plus counts."""
+    view = await tools.tables(limit)
+    return DbOut(
+        payments=[PaymentRowOut.model_validate(p, from_attributes=True) for p in view.payments],
+        payments_by_status=view.payments_by_status,
+        outbox=[OutboxRowOut.model_validate(e, from_attributes=True) for e in view.outbox],
+        outbox_total=view.outbox_total,
+        outbox_unpublished=view.outbox_unpublished,
+    )
 
 
 @router.get("/queues", response_model=list[QueueOut])

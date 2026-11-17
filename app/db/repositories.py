@@ -40,6 +40,14 @@ class PaymentRepository:
     async def get(self, payment_id: UUID) -> Payment | None:
         return await self._s.get(Payment, payment_id, populate_existing=True)
 
+    async def recent(self, limit: int) -> Sequence[Payment]:
+        stmt = sa.select(Payment).order_by(Payment.created_at.desc()).limit(limit)
+        return (await self._s.execute(stmt)).scalars().all()
+
+    async def count_by_status(self) -> dict[str, int]:
+        stmt = sa.select(Payment.status, sa.func.count()).group_by(Payment.status)
+        return {status.value: count for status, count in (await self._s.execute(stmt)).all()}
+
     async def get_by_idempotency_key(self, key: str) -> Payment | None:
         stmt = sa.select(Payment).where(Payment.idempotency_key == key)
         return (await self._s.execute(stmt)).scalar_one_or_none()
@@ -137,6 +145,18 @@ class OutboxRepository:
             .returning(OutboxEvent.id)
         )
         return (await self._s.execute(stmt)).scalar_one_or_none() is not None
+
+    async def recent(self, limit: int) -> Sequence[OutboxEvent]:
+        stmt = sa.select(OutboxEvent).order_by(OutboxEvent.id.desc()).limit(limit)
+        return (await self._s.execute(stmt)).scalars().all()
+
+    async def counts(self) -> tuple[int, int]:
+        """(all rows, rows not published yet)."""
+        stmt = sa.select(
+            sa.func.count(), sa.func.count().filter(OutboxEvent.published_at.is_(None))
+        )
+        total, unpublished = (await self._s.execute(stmt)).one()
+        return total, unpublished
 
     async def list_for(self, aggregate_id: UUID) -> Sequence[OutboxEvent]:
         stmt = (

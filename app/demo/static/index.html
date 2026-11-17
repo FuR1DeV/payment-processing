@@ -67,6 +67,22 @@
 
     <section class="feed" aria-live="polite">
       <div id="banner" class="banner" hidden></div>
+      <details id="db" class="panel db">
+        <summary>
+          <h2>Таблицы в PostgreSQL</h2>
+          <span id="db-counts" class="db-counts"></span>
+        </summary>
+        <p class="hint">
+          Последние 10 строк <code>payments</code> и <code>outbox</code> прямо из базы,
+          обновляются каждые 2 с. Новые и изменившиеся строки подсвечиваются: запустите
+          сценарий и смотрите, как платёж проходит путь от <code>pending</code> до
+          <code>webhook_delivered_at</code>, а событие получает <code>published_at</code>.
+        </p>
+        <h3 class="db-title">payments</h3>
+        <div class="table-wrap"><table class="table db-table" id="db-payments"></table></div>
+        <h3 class="db-title">outbox</h3>
+        <div class="table-wrap"><table class="table db-table" id="db-outbox"></table></div>
+      </details>
       <div class="feed-head">
         <h2>Платежи</h2>
         <button type="button" id="clear" class="link-button">Очистить</button>

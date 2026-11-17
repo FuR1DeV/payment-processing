@@ -15,7 +15,7 @@ import httpx
 from faststream.rabbit import RabbitBroker
 
 from app.core.config import Settings
-from app.db.models import OutboxEvent
+from app.db.models import OutboxEvent, Payment
 from app.messaging.broker import create_broker
 from app.messaging.dlq import replay_dead_letters
 from app.messaging.topology import Topology, declare
@@ -24,6 +24,15 @@ from app.services.ports import UnitOfWorkFactory
 
 class DemoBackendError(Exception):
     """The receiver or RabbitMQ did not answer; the page shows it and asks again later."""
+
+
+@dataclass(frozen=True)
+class DbView:
+    payments: Sequence[Payment]
+    payments_by_status: dict[str, int]
+    outbox: Sequence[OutboxEvent]
+    outbox_total: int
+    outbox_unpublished: int
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,21 @@ class DemoTools:
     async def outbox_events(self, payment_id: UUID) -> Sequence[OutboxEvent]:
         async with self._uow_factory() as uow:
             return await uow.outbox.list_for(payment_id)
+
+    async def tables(self, limit: int) -> DbView:
+        """The latest rows of both tables and their counts, as they are in PostgreSQL."""
+        async with self._uow_factory() as uow:
+            payments = await uow.payments.recent(limit)
+            by_status = await uow.payments.count_by_status()
+            outbox = await uow.outbox.recent(limit)
+            outbox_total, outbox_unpublished = await uow.outbox.counts()
+        return DbView(
+            payments=payments,
+            payments_by_status=by_status,
+            outbox=outbox,
+            outbox_total=outbox_total,
+            outbox_unpublished=outbox_unpublished,
+        )
 
     async def receiver(
         self, method: str, path: str, *, params: dict[str, Any] | None = None, json: Any = None

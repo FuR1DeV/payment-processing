@@ -1142,9 +1142,95 @@ async function toggleReceiver() {
   refreshReceiver();
 }
 
+// ---------------------------------------------------------------- database tables
+
+const PAYMENT_COLUMNS = [
+  ["id", "id"],
+  ["amount", "num"],
+  ["currency", "text"],
+  ["status", "status"],
+  ["failure_reason", "text"],
+  ["idempotency_key", "id"],
+  ["created_at", "time"],
+  ["processed_at", "time"],
+  ["webhook_delivered_at", "time"],
+];
+const OUTBOX_COLUMNS = [
+  ["id", "num"],
+  ["event_id", "id"],
+  ["event_type", "text"],
+  ["aggregate_id", "id"],
+  ["created_at", "time"],
+  ["published_at", "time"],
+  ["attempts", "num"],
+  ["next_attempt_at", "time"],
+  ["last_error", "text"],
+];
+const DB_STATUS_TONES = { pending: "info", succeeded: "ok", failed: "bad" };
+// Row signatures from the previous refresh: a new or different one is highlighted.
+// null: nothing shown yet, so nothing is "new" either.
+const dbSeen = { payments: null, outbox: null };
+
+function timeOfDay(iso) {
+  const d = new Date(parseTime(iso));
+  return `${d.toLocaleTimeString("ru-RU")}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+
+function dbCell(value, kind) {
+  if (value === null || value === undefined) return h("td", { class: "null" }, "null");
+  if (kind === "id") return h("td", null, h("code", { title: String(value) }, shortId(String(value))));
+  if (kind === "time") return h("td", { title: value }, timeOfDay(value));
+  if (kind === "num") return h("td", { class: "num" }, String(value));
+  if (kind === "status") {
+    return h("td", null, h("span", { class: `badge ${toneClass(DB_STATUS_TONES[value])}` }, value));
+  }
+  return h("td", null, String(value));
+}
+
+// Returns the row signatures to compare the next refresh with.
+function renderDbTable(table, columns, rows, previous) {
+  const current = new Map();
+  const body = rows.map((row) => {
+    const key = String(row.id);
+    const signature = JSON.stringify(row);
+    current.set(key, signature);
+    const changed = previous !== null && previous.get(key) !== signature;
+    return h("tr", { class: changed ? "changed" : null }, columns.map(([name, kind]) => dbCell(row[name], kind)));
+  });
+  table.replaceChildren(
+    h("thead", null, h("tr", null, columns.map(([name, kind]) => h("th", { class: kind === "num" ? "num" : null }, name)))),
+    h("tbody", null, body),
+  );
+  return current;
+}
+
+async function refreshDb() {
+  const counts = $("db-counts");
+  let result = null;
+  try {
+    result = await api("GET", "/demo/api/db?limit=10");
+  } catch {
+    result = null;
+  }
+  if (!result || result.status !== 200 || !result.data) {
+    counts.textContent = result && result.status === 401 ? "нужен ключ API" : "база не отвечает";
+    return;
+  }
+  const d = result.data;
+  const by = d.payments_by_status;
+  const total = Object.values(by).reduce((sum, n) => sum + n, 0);
+  counts.textContent =
+    `payments: ${total} (succeeded ${by.succeeded || 0}, failed ${by.failed || 0}, ` +
+    `pending ${by.pending || 0}) · outbox: ${d.outbox_total}, не опубликовано ${d.outbox_unpublished}`;
+  if (!$("db").open) return; // the counts are enough while the block is closed
+  dbSeen.payments = renderDbTable($("db-payments"), PAYMENT_COLUMNS, d.payments, dbSeen.payments);
+  dbSeen.outbox = renderDbTable($("db-outbox"), OUTBOX_COLUMNS, d.outbox, dbSeen.outbox);
+}
+
 function refreshSide() {
   refreshReceiver();
   refreshQueues();
+  refreshDb();
 }
 
 function initKey() {
@@ -1192,6 +1278,13 @@ function init() {
   });
   $("receiver-toggle").addEventListener("click", toggleReceiver);
   $("replay").addEventListener("click", replayFromPanel);
+  $("db").addEventListener("toggle", () => {
+    if (!$("db").open) return;
+    // Rows that changed while the block was closed are not "new" to the reader.
+    dbSeen.payments = null;
+    dbSeen.outbox = null;
+    refreshDb();
+  });
   refreshSide();
   setInterval(refreshSide, SIDE_REFRESH_MS);
 }

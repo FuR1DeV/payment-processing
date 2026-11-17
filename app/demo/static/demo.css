@@ -261,6 +261,19 @@ h3 { font-size: 16px; }
 .log li.good { color: var(--ok); }
 .log li.bad { color: var(--bad); }
 
+.db > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.db > summary h2 { display: inline; }
+.db-counts { color: var(--muted); font-size: 13px; }
+.db-title { font-size: 14px; font-family: var(--mono); margin: 12px 0 4px; }
+.table-wrap { overflow-x: auto; }
+.db-table { font-size: 12px; white-space: nowrap; }
+.db-table td, .db-table th { padding: 4px 6px; }
+.db-table code { font-size: 12px; }
+.db-table .null { color: var(--muted); font-style: italic; }
+.db-table tr.changed td { animation: changed 2.5s ease-out; }
+@keyframes changed { from { background: var(--info-bg); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .db-table tr.changed td { animation: none; background: var(--info-bg); } }
+
 .http { margin-top: 10px; font-size: 13px; }
 .http > summary { cursor: pointer; color: var(--muted); }
 .exchanges { display: grid; gap: 6px; }

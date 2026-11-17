@@ -30,6 +30,7 @@ async def test_page_is_served_and_uses_only_text(client: httpx.AsyncClient) -> N
         '"/demo/api/queues"',
         '"/demo/api/receiver/mode"',
         '"/demo/api/dlq/replay"',
+        '"/demo/api/db?limit=10"',
     ):
         assert endpoint in script.text
     assert "innerHTML" not in script.text  # API data goes into the page as text only
@@ -37,8 +38,24 @@ async def test_page_is_served_and_uses_only_text(client: httpx.AsyncClient) -> N
 
 
 async def test_helpers_need_the_api_key(client: httpx.AsyncClient) -> None:
-    for path in ("/demo/api/queues", "/demo/api/receiver/mode"):
+    for path in ("/demo/api/queues", "/demo/api/receiver/mode", "/demo/api/db"):
         assert (await client.get(path)).status_code == 401
+
+
+async def test_database_tables(client: httpx.AsyncClient) -> None:
+    for _ in range(3):
+        await create_payment(client)
+    response = await client.get("/demo/api/db", params={"limit": 2}, headers=KEY)
+    assert response.status_code == 200
+    db = response.json()
+    assert len(db["payments"]) == len(db["outbox"]) == 2  # the latest rows only
+    assert db["payments"][0]["status"] == "pending"
+    assert db["payments"][0]["amount"] == "1500.00"
+    assert db["outbox"][0]["published_at"] is None
+    assert db["payments_by_status"] == {"pending": 3}
+    assert (db["outbox_total"], db["outbox_unpublished"]) == (3, 3)
+    too_many = await client.get("/demo/api/db", params={"limit": 500}, headers=KEY)
+    assert too_many.status_code == 422
 
 
 async def test_outbox_of_a_payment(client: httpx.AsyncClient) -> None:
@@ -115,6 +132,7 @@ async def test_everything_is_gone_when_switched_off() -> None:
         ) as client:
             assert (await client.get("/demo/")).status_code == 404
             assert (await client.get("/demo/api/queues", headers=KEY)).status_code == 404
+            assert (await client.get("/demo/api/db", headers=KEY)).status_code == 404
             assert (await client.get("/health")).status_code == 200
     finally:
         await container.close()
